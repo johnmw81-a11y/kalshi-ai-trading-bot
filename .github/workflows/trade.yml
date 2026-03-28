@@ -36,8 +36,9 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           AI_PROVIDER: "google"
           MODEL_NAME: "gemini-2.0-flash"
-          MARKET_TOPIC: "Sports"
-          MAX_MARKETS_TO_PROCESS: "10"
+          # Focused strictly on College Basketball and MLB
+          MARKET_TOPIC: "NCAA, MLB, Baseball, Basketball"
+          MAX_MARKETS_TO_PROCESS: "15"
           LOG_LEVEL: "DEBUG"
           XAI_API_KEY: "not-used"
           OPENAI_API_KEY: "not-used"
