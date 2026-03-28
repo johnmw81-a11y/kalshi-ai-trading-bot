@@ -24,7 +24,7 @@ jobs:
       - name: Create key file
         run: |
           echo "${{ secrets.KALSHI_PRIVATE_KEY }}" > kalshi_private_key.pem
-
+          chmod 600 kalshi_private_key.pem
       - name: Run Trading Script
         env:
           KALSHI_KEY_ID: ${{ secrets.KALSHI_KEY_ID }}
