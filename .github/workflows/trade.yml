@@ -16,10 +16,9 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install dependencies
+     - name: Install dependencies
         run: |
-          pip install google-genai requests cryptography python-dotenv aiosqlite
-
+          pip install google-genai requests cryptography python-dotenv aiosqlite structlog pandas numpy
       - name: Run Trading Script
         env:
           KALSHI_API_KEY: ${{ secrets.KALSHI_KEY_ID }}
