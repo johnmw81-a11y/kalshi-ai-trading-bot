@@ -1,0 +1,27 @@
+name: Run Kalshi Gemini Bot
+on:
+  workflow_dispatch: # This adds the "Manual Run" button
+  schedule:
+    - cron: '0 13 * * *' # This tells it to run automatically once a day
+
+jobs:
+  trade:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Trading Script
+        env:
+          KALSHI_KEY_ID: ${{ secrets.KALSHI_KEY_ID }}
+          KALSHI_PRIVATE_KEY: ${{ secrets.KALSHI_PRIVATE_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python src/main.py --demo # Starts in Demo mode for safety
