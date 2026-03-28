@@ -36,14 +36,14 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           AI_PROVIDER: "google"
           MODEL_NAME: "gemini-2.0-flash"
-          # TARGETING: Men's Elite Eight and MLB Winners
-          MARKET_TOPIC: "NCAAM, MLB, Baseball, Basketball"
-          MAX_MARKETS_TO_PROCESS: "10"
-          # RISK MANAGEMENT
+          # PREFERENCES: Men's College Basketball and MLB
+          MARKET_TOPIC: "NCAAM, MLB, Baseball, Men's Basketball"
+          MAX_MARKETS_TO_PROCESS: "15"
+          # RISK MANAGEMENT: $20 Max / 60% Confidence
           MAX_ORDER_VALUE: "20"
           STAKE_USD: "20"
-          # SKIP DEAD MARKETS (Anything priced over 98 cents)
-          MIN_PROFIT_THRESHOLD: "0.02" 
+          MIN_CONFIDENCE_THRESHOLD: "0.60"
+          MAX_POSITION_SIZE_PCTG: "15" 
           LOG_LEVEL: "DEBUG"
           XAI_API_KEY: "not-used"
           OPENAI_API_KEY: "not-used"
