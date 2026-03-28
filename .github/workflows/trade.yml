@@ -36,12 +36,16 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           AI_PROVIDER: "google"
           MODEL_NAME: "gemini-2.0-flash"
+          # FOCUS: Just Men's NCAA and MLB Winners
           MARKET_TOPIC: "NCAAM, MLB"
-          MAX_MARKETS_TO_PROCESS: "5"
+          MAX_MARKETS_TO_PROCESS: "3"
           ENABLE_NEWS_SEARCH: "false"
+          # RISK & SPEED
           MAX_ORDER_VALUE: "20"
           STAKE_USD: "20"
-          MIN_CONFIDENCE_THRESHOLD: "0.60"
+          MIN_CONFIDENCE_THRESHOLD: "0.55"
+          # This allows the bot to buy even if the price shifts slightly
+          SLIPPAGE_PROTECTION: "0.02" 
           LOG_LEVEL: "DEBUG"
           XAI_API_KEY: "not-used"
           OPENAI_API_KEY: "not-used"
