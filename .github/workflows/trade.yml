@@ -34,4 +34,4 @@ jobs:
           XAI_API_KEY: "not-used"
           OPENAI_API_KEY: "not-used"
           OPENROUTER_API_KEY: "not-used"
-        run: python beast_mode_bot.py --paper
+        run: python beast_mode_bot.py
