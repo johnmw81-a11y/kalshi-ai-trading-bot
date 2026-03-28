@@ -19,16 +19,17 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install google-genai requests cryptography python-dotenv aiosqlite structlog pandas numpy scipy matplotlib json_repair
+          pip install google-genai requests cryptography python-dotenv aiosqlite structlog pandas numpy scipy matplotlib json_repair xai-sdk
 
       - name: Run Trading Script
         env:
-          KALSHI_API_KEY: ${{ secrets.KALSHI_KEY_ID }}
           KALSHI_KEY_ID: ${{ secrets.KALSHI_KEY_ID }}
+          KALSHI_API_KEY: ${{ secrets.KALSHI_KEY_ID }}
           KALSHI_PRIVATE_KEY: ${{ secrets.KALSHI_PRIVATE_KEY }}
           KALSHI_API_BASE_64_KEY: ${{ secrets.KALSHI_PRIVATE_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          # These lines force the bot to use Gemini instead of xAI/Grok
           AI_PROVIDER: "google"
           MODEL_NAME: "gemini-2.0-flash"
+          # This "fake" key stops the error so the bot can get to the Gemini part
+          XAI_API_KEY: "not-used" 
         run: python beast_mode_bot.py --paper
