@@ -24,6 +24,8 @@ jobs:
       - name: Run Trading Script
         env:
           KALSHI_API_KEY: ${{ secrets.KALSHI_KEY_ID }}
+          KALSHI_KEY_ID: ${{ secrets.KALSHI_KEY_ID }}
+          KALSHI_PRIVATE_KEY: ${{ secrets.KALSHI_PRIVATE_KEY }}
           KALSHI_API_BASE_64_KEY: ${{ secrets.KALSHI_PRIVATE_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python beast_mode_bot.py --paper
