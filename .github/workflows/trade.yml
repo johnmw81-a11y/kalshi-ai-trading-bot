@@ -1,33 +1,4 @@
-name: Run Kalshi Gemini Bot
-on:
-  workflow_dispatch:
-  schedule:
-    - cron: '0 13 * * *'
-
-jobs:
-  trade:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install google-genai requests cryptography python-dotenv aiosqlite structlog pandas numpy scipy matplotlib json_repair xai-sdk openai openrouter pydantic
-
-      - name: Create key file
-        run: |
-          echo "${{ secrets.KALSHI_PRIVATE_KEY }}" > temp_key.pem
-          perl -pe 's/\\n/\n/g' temp_key.pem > kalshi_private_key.pem
-          chmod 600 kalshi_private_key.pem
-
-      - name: Run Trading Script
+- name: Run Trading Script
         env:
           KALSHI_KEY_ID: ${{ secrets.KALSHI_KEY_ID }}
           KALSHI_API_KEY: ${{ secrets.KALSHI_KEY_ID }}
@@ -36,14 +7,14 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           AI_PROVIDER: "google"
           MODEL_NAME: "gemini-2.0-flash"
-          # PREFERENCES: Men's College Basketball and MLB
-          MARKET_TOPIC: "NCAAM, MLB, Baseball, Men's Basketball"
-          MAX_MARKETS_TO_PROCESS: "15"
-          # RISK MANAGEMENT: $20 Max / 60% Confidence
+          MARKET_TOPIC: "NCAAM, MLB"
+          # SPEED BOOST: Only process 5 markets and skip slow news searches
+          MAX_MARKETS_TO_PROCESS: "5"
+          ENABLE_NEWS_SEARCH: "false" 
+          # RISK MANAGEMENT
           MAX_ORDER_VALUE: "20"
           STAKE_USD: "20"
           MIN_CONFIDENCE_THRESHOLD: "0.60"
-          MAX_POSITION_SIZE_PCTG: "15" 
           LOG_LEVEL: "DEBUG"
           XAI_API_KEY: "not-used"
           OPENAI_API_KEY: "not-used"
