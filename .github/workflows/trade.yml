@@ -1,55 +1,29 @@
 name: Continuous Sports & Politics Sniper
+
 on:
-  workflow_dispatch:
   schedule:
-    - cron: '*/5 * * * *'
+    - cron: '*/3 * * * *'  # Runs automatically every 3 minutes
+  workflow_dispatch:      # Allows you to click "Run workflow" manually
 
 jobs:
   trade:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: Checkout Code
         uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.10'
 
-      - name: Install dependencies
+      - name: Install Dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install google-genai requests cryptography python-dotenv aiosqlite structlog pandas numpy scipy matplotlib json_repair xai-sdk openai openrouter pydantic
+          pip install requests
 
-      - name: Create key file
-        run: |
-          echo "${{ secrets.KALSHI_PRIVATE_KEY }}" > temp_key.pem
-          perl -pe 's/\\n/\n/g' temp_key.pem > kalshi_private_key.pem
-          chmod 600 kalshi_private_key.pem
-
-      - name: Run Sniper Loop
+      - name: Execute Harvester Loop
         env:
-          KALSHI_KEY_ID: ${{ secrets.KALSHI_KEY_ID }}
-          KALSHI_API_KEY: ${{ secrets.KALSHI_KEY_ID }}
-          KALSHI_PRIVATE_KEY: ${{ secrets.KALSHI_PRIVATE_KEY }}
-          KALSHI_API_BASE_64_KEY: ${{ secrets.KALSHI_PRIVATE_KEY }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          # This satisfies the SDK requirement to prevent the crash
-          XAI_API_KEY: ${{ secrets.GEMINI_API_KEY }} 
-          AI_PROVIDER: "google"
-          MODEL_NAME: "gemini-2.0-flash"
-          # Expanded Topics for tonight's big news
+          KALSHI_API_KEY: ${{ secrets.KALSHI_API_KEY }}
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
           MARKET_TOPIC: "NCAAM, MLB, Politics, Texas Senate, DHS Shutdown"
-          MAX_MARKETS_TO_PROCESS: "5"
-          ENABLE_NEWS_SEARCH: "false"
-          MAX_ORDER_VALUE: "20"
-          STAKE_USD: "20"
-          MIN_CONFIDENCE_THRESHOLD: "0.60"
-          SLIPPAGE_PROTECTION: "0.03" 
-          LOG_LEVEL: "DEBUG"
-        run: |
-          # 3-minute High-Frequency Loop
-          python beast_mode_bot.py
-          echo "Sleeping 3 mins for next live check..."
-          sleep 180
-          python beast_mode_bot.py
+        run: python beast_mode_bot.py
