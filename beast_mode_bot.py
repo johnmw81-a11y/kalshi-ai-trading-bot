@@ -11,25 +11,24 @@ def run_sniper():
     print(f"🎯 AUTHENTICATED SNIPER: {time.strftime('%X')} CT")
     api_key = os.getenv('KALSHI_API_KEY')
     
-    # NEW 2026 STANDARDS: All trades must use the elections subdomain
+    # Using the high-speed 2026 elections endpoint
     base_url = "https://api.elections.kalshi.com/trade-api/v2"
     
-    # These headers are now mandatory for Market Orders in 2026
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
-        "Accept": "application/json"
+        "Accept": "application/json" # Mandatory in 2026
     }
     
-    # LIVE TICKER: Found for Ken Paxton as of 1:35 PM
+    # LIVE TICKER: Ken Paxton (Texas Senate)
     target_ticker = "KXSENATETXR-26-KP" 
 
-    # Every order REQUIRES a unique client_order_id in 2026
+    # Every order in 2026 REQUIRES a unique client_order_id for security
     order_payload = {
         "ticker": target_ticker,
         "action": "buy",
         "side": "yes",
-        "count": 30, # Approx $21.00 at 70c
+        "count": 30, # Approx $20.70 at current 69c market
         "type": "market",
         "client_order_id": str(uuid.uuid4()) 
     }
@@ -40,13 +39,14 @@ def run_sniper():
                                  json=order_payload, headers=headers)
         
         if response.status_code in [200, 201]:
-            print("✅ BOOM! SUCCESS! Trade confirmed. Check Kalshi Portfolio.")
+            print("✅ BOOM! SUCCESS! Check your Kalshi App NOW.")
+            print(f"Order ID: {response.json().get('order_id')}")
         else:
             print(f"❌ REJECTED: Status {response.status_code}")
             print(f"Reason: {response.text}")
             
     except Exception as e:
-        print(f"⚠️ API Connection Error: {e}")
+        print(f"⚠️ Connection Error: {e}")
 
 if __name__ == "__main__":
     run_sniper()
