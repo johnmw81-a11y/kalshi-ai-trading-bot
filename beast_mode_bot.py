@@ -8,6 +8,13 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives import serialization
 
+# --- SMART HARVESTER CONFIG ---
+TARGET_TICKER = "KXSENATETXR-26-KP"
+MAX_POSITION_DOLLARS = 45   # 🛡️ Never hold more than $45 of this ticker
+TRADE_AMOUNT_DOLLARS = 20   # 🛒 Buy in roughly $20 chunks
+BUY_PRICE_LIMIT = 75        # 🛑 Don't pay more than 75c
+HARVEST_PRICE = 85          # 🌾 Sell everything if the bid reaches 85c
+
 def sign_request(private_key_str, timestamp, method, path):
     private_key = serialization.load_pem_private_key(
         private_key_str.encode('utf-8'), 
@@ -24,22 +31,14 @@ def sign_request(private_key_str, timestamp, method, path):
     )
     return base64.b64encode(signature).decode('utf-8')
 
-def run_sniper():
-    print(f"🎯 RSA AUTHENTICATED SNIPER: {time.strftime('%X')} CT")
-    
+def make_kalshi_request(method, path, payload=None):
+    """Helper function to handle the strict 2026 Kalshi security for all requests"""
     api_key_id = os.getenv('KALSHI_KEY_ID')
     private_key_str = os.getenv('KALSHI_PRIVATE_KEY')
-    
-    if not api_key_id or not private_key_str:
-        print("❌ Missing KALSHI_KEY_ID or KALSHI_PRIVATE_KEY in GitHub Secrets.")
-        return
-
     base_url = "https://api.elections.kalshi.com/trade-api/v2"
-    target_ticker = "KXSENATETXR-26-KP" 
-    path = "/portfolio/orders"
     
     timestamp = str(int(datetime.datetime.now().timestamp() * 1000))
-    signature = sign_request(private_key_str, timestamp, "POST", "/trade-api/v2" + path)
+    signature = sign_request(private_key_str, timestamp, method, "/trade-api/v2" + path)
     
     headers = {
         "KALSHI-ACCESS-KEY": api_key_id,
@@ -47,31 +46,98 @@ def run_sniper():
         "KALSHI-ACCESS-TIMESTAMP": timestamp,
         "Content-Type": "application/json"
     }
+    
+    url = f"{base_url}{path}"
+    if method == "GET":
+        return requests.get(url, headers=headers)
+    elif method == "POST":
+        return requests.post(url, json=payload, headers=headers)
 
-    # THE FIX IS HERE: Added 'yes_price' to satisfy Kalshi's safety requirements
-    order_payload = {
-        "ticker": target_ticker,
-        "action": "buy",
-        "side": "yes",
-        "count": 30, 
-        "type": "market",
-        "yes_price": 85, # Maximum willing to pay (in cents). Fills at best available.
-        "client_order_id": str(uuid.uuid4()) 
-    }
+def run_sniper():
+    print(f"🤖 SMART HARVESTER WAKING UP: {time.strftime('%X')} CT")
+    
+    if not os.getenv('KALSHI_KEY_ID') or not os.getenv('KALSHI_PRIVATE_KEY'):
+        print("❌ Missing Secrets!")
+        return
 
-    try:
-        print(f"🛒 Sending RSA-Signed Market Buy for {target_ticker}...")
-        response = requests.post(f"{base_url}{path}", json=order_payload, headers=headers)
+    # 1. READ THE LIVE MARKET
+    print(f"📊 Checking live prices for {TARGET_TICKER}...")
+    market_resp = make_kalshi_request("GET", f"/markets/{TARGET_TICKER}")
+    if market_resp.status_code != 200:
+        print("⚠️ Could not read market data.")
+        return
         
-        if response.status_code in [200, 201]:
-            print("✅ BOOM! SUCCESS! Trade confirmed. Check your App!")
-            print(response.json())
+    market_data = market_resp.json().get('market', {})
+    yes_ask = market_data.get('yes_ask', 100) # Price to buy
+    yes_bid = market_data.get('yes_bid', 0)   # Price to sell
+    print(f"📈 Live Market -> Buy at: {yes_ask}¢ | Sell at: {yes_bid}¢")
+
+    # 2. CHECK YOUR POCKETS (PORTFOLIO)
+    print("💼 Checking your Kalshi portfolio...")
+    pos_resp = make_kalshi_request("GET", "/portfolio/positions")
+    
+    current_contracts = 0
+    if pos_resp.status_code == 200:
+        positions = pos_resp.json().get('market_positions', [])
+        for p in positions:
+            if p.get('ticker') == TARGET_TICKER:
+                current_contracts = p.get('position', 0)
+    
+    # Calculate current invested value (based on current sell price)
+    current_value_dollars = (current_contracts * yes_bid) / 100
+    print(f"💰 You currently own {current_contracts} contracts (Est Value: ${current_value_dollars:.2f})")
+
+    # 3. HARVEST LOGIC (SELL)
+    if current_contracts > 0 and yes_bid >= HARVEST_PRICE:
+        print(f"🌾 HARVEST TIME! The bid is {yes_bid}¢ (Target: {HARVEST_PRICE}¢). Dumping all {current_contracts} contracts!")
+        sell_payload = {
+            "ticker": TARGET_TICKER,
+            "action": "sell",
+            "side": "yes",
+            "count": current_contracts,
+            "type": "market",
+            "client_order_id": str(uuid.uuid4())
+        }
+        sell_resp = make_kalshi_request("POST", "/portfolio/orders", sell_payload)
+        if sell_resp.status_code in [200, 201]:
+            print("✅ BOOM! PROFIT SECURED. Check your balance.")
         else:
-            print(f"❌ REJECTED: Status {response.status_code}")
-            print(f"Reason: {response.text}")
-            
-    except Exception as e:
-        print(f"⚠️ API Error: {e}")
+            print(f"❌ Sell failed: {sell_resp.text}")
+        return # Stop after selling so we don't immediately rebuy
+
+    # 4. SNIPER LOGIC (BUY)
+    if current_value_dollars >= MAX_POSITION_DOLLARS:
+        print(f"🛡️ Max position limit (${MAX_POSITION_DOLLARS}) reached. Holding steady.")
+        return
+        
+    if yes_ask <= BUY_PRICE_LIMIT:
+        # Calculate exactly how many contracts to buy without breaking the $45 limit
+        dollars_room = MAX_POSITION_DOLLARS - current_value_dollars
+        target_buy_dollars = min(TRADE_AMOUNT_DOLLARS, dollars_room)
+        contracts_to_buy = int((target_buy_dollars * 100) / yes_ask)
+        
+        if contracts_to_buy < 1:
+            print("Not enough room under the limit to buy more.")
+            return
+
+        print(f"🛒 Price is good ({yes_ask}¢). Buying {contracts_to_buy} more contracts...")
+        buy_payload = {
+            "ticker": TARGET_TICKER,
+            "action": "buy",
+            "side": "yes",
+            "count": contracts_to_buy,
+            "type": "market",
+            "yes_price": BUY_PRICE_LIMIT, 
+            "client_order_id": str(uuid.uuid4())
+        }
+        
+        buy_resp = make_kalshi_request("POST", "/portfolio/orders", buy_payload)
+        if buy_resp.status_code in [200, 201]:
+            print("✅ BOOM! BOUGHT MORE. Position increased.")
+        else:
+            print(f"❌ Buy failed: {buy_resp.text}")
+    else:
+        print(f"⏳ Market too expensive right now ({yes_ask}¢). Waiting for a dip.")
 
 if __name__ == "__main__":
     run_sniper()
