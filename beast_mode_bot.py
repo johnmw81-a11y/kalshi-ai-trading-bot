@@ -4,44 +4,58 @@ import requests
 
 # --- CONFIGURATION ---
 KALSHI_API_URL = "https://trading-api.kalshi.com/trade-api/v2"
-MIN_CONFIDENCE = 0.60  # Sniper Entry Trigger
-PROFIT_TARGET = 0.07   # Harvester Exit (7 cents profit)
-TRADE_AMOUNT = 20      # Dollars per trade
+MIN_CONFIDENCE = 0.60  
+PROFIT_TARGET = 0.07   
+TRADE_AMOUNT = 20      
 
 def get_kalshi_headers():
+    # Ensure the key exists to avoid immediate crash
+    api_key = os.getenv('KALSHI_API_KEY')
+    if not api_key:
+        print("❌ ERROR: KALSHI_API_KEY is missing from Secrets!")
     return {
-        "Authorization": f"Bearer {os.getenv('KALSHI_API_KEY')}",
+        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json"
     }
 
 def run_harvester_loop():
     print(f"🚀 Loop started at {time.strftime('%X')} CT")
     
-    # 1. GET CURRENT POSITIONS (To see what we can 'Harvest')
-    # This checks if you already bought something and if it's time to sell for a win.
-    portfolio = requests.get(f"{KALSHI_API_URL}/portfolio/positions", headers=get_kalshi_headers()).json()
-    
-    for pos in portfolio.get('positions', []):
-        ticker = pos['ticker']
-        avg_price = float(pos['avg_cost_basis']) / 100
-        current_market = requests.get(f"{KALSHI_API_URL}/markets/{ticker}", headers=get_kalshi_headers()).json()
-        current_price = float(current_market['market']['yes_bid']) / 100
+    try:
+        # 1. GET CURRENT POSITIONS
+        response = requests.get(f"{KALSHI_API_URL}/portfolio/positions", headers=get_kalshi_headers())
         
-        # HARVEST LOGIC: If we are up 7 cents, SELL ALL
-        if (current_price - avg_price) >= PROFIT_TARGET:
-            print(f"💰 HARVESTING: {ticker} up {current_price - avg_price:.2f}. Selling for profit!")
-            # [Place Sell Order Code Here]
-            continue
+        # Check if Kalshi actually answered correctly (Status Code 200)
+        if response.status_code != 200:
+            print(f"⚠️ Kalshi API rejected the request. Status: {response.status_code}")
+            print(f"Response: {response.text}")
+            return # Exit the loop gracefully instead of crashing
 
-    # 2. SNIPER LOGIC (To find new entries)
-    # This scans the markets you care about
-    topics = os.getenv("MARKET_TOPIC", "NCAAM, MLB, Politics").split(",")
-    for topic in topics:
-        print(f"🔎 Scanning {topic.strip()} for Sniper entries...")
-        # [Market Scanning & AI Confidence Logic Here]
-        # If AI Confidence > 0.60 and we don't own it: BUY $20
+        portfolio = response.json()
+        
+        # If we have positions, look to HARVEST
+        for pos in portfolio.get('positions', []):
+            ticker = pos.get('ticker')
+            avg_price = float(pos.get('avg_cost_basis', 0)) / 100
+            
+            # Get current market price for that ticker
+            m_res = requests.get(f"{KALSHI_API_URL}/markets/{ticker}", headers=get_kalshi_headers())
+            if m_res.status_code == 200:
+                m_data = m_res.json()
+                current_price = float(m_data['market']['yes_bid']) / 100
+                
+                if (current_price - avg_price) >= PROFIT_TARGET:
+                    print(f"💰 HARVESTING: {ticker} profit detected. Sending Sell Order...")
+                    # [Sell logic would fire here]
 
-    print("✅ Loop finished. Standing by for next 3-minute cycle.")
+    except Exception as e:
+        print(f"❌ An unexpected error occurred: {e}")
+
+    # 2. SNIPER LOGIC
+    print("🔎 Scanning markets for new Sniper entries...")
+    # (The AI scanning logic continues here)
+
+    print("✅ Loop finished. Standing by.")
 
 if __name__ == "__main__":
     run_harvester_loop()
