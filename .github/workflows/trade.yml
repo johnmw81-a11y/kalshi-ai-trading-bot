@@ -2,8 +2,10 @@ name: Continuous Sports & Politics Sniper
 
 on:
   schedule:
-    - cron: '*/3 * * * *'  # Runs automatically every 3 minutes
-  workflow_dispatch:      # Allows you to click "Run workflow" manually
+    - cron: '*/3 * * * *'  # The "Request" for 3 minutes
+  workflow_dispatch:      # The Manual Button
+  push:                   # NEW: Runs INSTANTLY when you save code
+    branches: [main]
 
 jobs:
   trade:
@@ -11,20 +13,16 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
-
-      - name: Set up Python
+      
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
       - name: Install Dependencies
-        run: |
-          pip install requests
+        run: pip install requests
 
       - name: Execute Harvester Loop
         env:
           KALSHI_API_KEY: ${{ secrets.KALSHI_API_KEY }}
-          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
-          MARKET_TOPIC: "NCAAM, MLB, Politics, Texas Senate, DHS Shutdown"
         run: python beast_mode_bot.py
-
