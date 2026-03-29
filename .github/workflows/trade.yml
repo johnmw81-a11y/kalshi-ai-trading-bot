@@ -1,8 +1,8 @@
-name: Run Kalshi Gemini Bot
+name: Continuous Sports & Politics Sniper
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 13 * * *'
+    - cron: '*/5 * * * *'
 
 jobs:
   trade:
@@ -27,7 +27,7 @@ jobs:
           perl -pe 's/\\n/\n/g' temp_key.pem > kalshi_private_key.pem
           chmod 600 kalshi_private_key.pem
 
-      - name: Run Trading Script
+      - name: Run Sniper Loop
         env:
           KALSHI_KEY_ID: ${{ secrets.KALSHI_KEY_ID }}
           KALSHI_API_KEY: ${{ secrets.KALSHI_KEY_ID }}
@@ -36,18 +36,19 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           AI_PROVIDER: "google"
           MODEL_NAME: "gemini-2.0-flash"
-          # FOCUS: Just Men's NCAA and MLB Winners
-          MARKET_TOPIC: "NCAAM, MLB"
-          MAX_MARKETS_TO_PROCESS: "3"
+          # TOPICS: Added Politics to the mix
+          MARKET_TOPIC: "NCAAM, MLB, Politics, Congress, Elections"
+          MAX_MARKETS_TO_PROCESS: "5"
           ENABLE_NEWS_SEARCH: "false"
-          # RISK & SPEED
+          # RISK: Keeping your 60% discipline
           MAX_ORDER_VALUE: "20"
           STAKE_USD: "20"
-          MIN_CONFIDENCE_THRESHOLD: "0.55"
-          # This allows the bot to buy even if the price shifts slightly
-          SLIPPAGE_PROTECTION: "0.02" 
+          MIN_CONFIDENCE_THRESHOLD: "0.60"
+          SLIPPAGE_PROTECTION: "0.03" 
           LOG_LEVEL: "DEBUG"
-          XAI_API_KEY: "not-used"
-          OPENAI_API_KEY: "not-used"
-          OPENROUTER_API_KEY: "not-used"
-        run: python beast_mode_bot.py
+        run: |
+          # This runs the bot, waits 3 minutes, then runs it again (2 times per workflow)
+          python beast_mode_bot.py
+          echo "Sleeping for 3 minutes before next check..."
+          sleep 180
+          python beast_mode_bot.py
