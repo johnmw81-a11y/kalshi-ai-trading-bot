@@ -1,29 +1,72 @@
-name: NCAA Live Game Sniper
+import os
+import requests
+import time
+import uuid
+import datetime
+import base64
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives import serialization
 
-on:
-  schedule:
-    - cron: '*/5 * * * *'
-  workflow_dispatch:
-  push:
-    branches: [main]
+# --- NCAA HOOPS CONFIG ---
+# 🚨 PASTE THE REAL KALSHI TICKER RIGHT HERE:
+TARGET_TICKER = "REPLACE_ME_WITH_REAL_TICKER" 
 
-jobs:
-  trade:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-      
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
+MAX_POSITION_DOLLARS = 45   
+TRADE_AMOUNT_DOLLARS = 20   
 
-      - name: Install Dependencies
-        run: pip install requests cryptography
+# --- THE PRO SHIELDS (Basketball is swingy!) ---
+BUY_PRICE_LIMIT = 50        
+HARVEST_PRICE = 85          
+STOP_LOSS_PRICE = 25        
 
-      - name: Execute NCAA Sniper
-        env:
-          KALSHI_KEY_ID: ${{ secrets.KALSHI_KEY_ID }}
-          KALSHI_PRIVATE_KEY: ${{ secrets.KALSHI_PRIVATE_KEY }}
-        run: python ncaa_sniper.py
+def sign_request(private_key_str, timestamp, method, path):
+    private_key = serialization.load_pem_private_key(private_key_str.encode('utf-8'), password=None)
+    msg_string = timestamp + method + path
+    signature = private_key.sign(msg_string.encode('utf-8'), padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH), hashes.SHA256())
+    return base64.b64encode(signature).decode('utf-8')
+
+def make_kalshi_request(method, path, payload=None):
+    api_key_id = os.getenv('KALSHI_KEY_ID')
+    private_key_str = os.getenv('KALSHI_PRIVATE_KEY')
+    base_url = "https://api.elections.kalshi.com/trade-api/v2"
+    timestamp = str(int(datetime.datetime.now().timestamp() * 1000))
+    signature = sign_request(private_key_str, timestamp, method, "/trade-api/v2" + path)
+    headers = {"KALSHI-ACCESS-KEY": api_key_id, "KALSHI-ACCESS-SIGNATURE": signature, "KALSHI-ACCESS-TIMESTAMP": timestamp, "Content-Type": "application/json"}
+    url = f"{base_url}{path}"
+    if method == "GET": return requests.get(url, headers=headers)
+    elif method == "POST": return requests.post(url, json=payload, headers=headers)
+
+def run_ncaa_sniper():
+    print(f"🏀 NCAA SNIPER WAKING UP: {time.strftime('%X')} CT")
+    if not os.getenv('KALSHI_KEY_ID') or not os.getenv('KALSHI_PRIVATE_KEY'):
+        print("❌ Missing Secrets!")
+        return
+
+    print(f"📊 Checking live prices for {TARGET_TICKER}...")
+    market_resp = make_kalshi_request("GET", f"/markets/{TARGET_TICKER}")
+    if market_resp.status_code != 200:
+        print("⚠️ Could not read market data.")
+        return
+        
+    market_data = market_resp.json().get('market', {})
+    try:
+        yes_ask = int(float(market_data.get('yes_ask_dollars', '1.00')) * 100)
+        yes_bid = int(float(market_data.get('yes_bid_dollars', '0.00')) * 100)
+    except ValueError:
+        yes_ask, yes_bid = 100, 0
+    print(f"📈 Live Market -> Buy at: {yes_ask}¢ | Sell at: {yes_bid}¢")
+
+    print("💼 Checking your Kalshi portfolio...")
+    pos_resp = make_kalshi_request("GET", "/portfolio/positions")
+    current_contracts = 0
+    if pos_resp.status_code == 200:
+        positions = pos_resp.json().get('market_positions', [])
+        for p in positions:
+            if p.get('ticker') == TARGET_TICKER:
+                current_contracts = int(float(p.get('position_fp', '0')))
+    
+    current_value_dollars = (current_contracts * yes_bid) / 100
+    print(f"💰 You currently own {current_contracts} contracts (Est Value: ${current_value_dollars:.2f})")
+
+    if current_contracts > 0:
