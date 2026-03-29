@@ -10,7 +10,8 @@ TRADE_AMOUNT = 20
 def run_sniper():
     print(f"🔥 FINAL ATTEMPT LIVE: {time.strftime('%X')} CT")
     api_key = os.getenv('KALSHI_API_KEY')
-    # The 'elections' subdomain is the new standard for ALL Kalshi v2 trades
+    
+    # NEW 2026 STANDARDS: All trades go through the 'elections' high-speed API
     base_url = "https://api.elections.kalshi.com/trade-api/v2"
     
     headers = {
@@ -18,7 +19,7 @@ def run_sniper():
         "Content-Type": "application/json"
     }
     
-    # This is the exact live ticker for the Paxton Nomination Market
+    # EXACT LIVE TICKER: Found via search for Ken Paxton 2026
     target_ticker = "KXSENATETXR-26-KP" 
 
     # Kalshi REQUIRES a unique client_order_id for every single attempt
@@ -26,7 +27,7 @@ def run_sniper():
         "ticker": target_ticker,
         "action": "buy",
         "side": "yes",
-        "count": 30, # ~ $21.00 at 70 cents
+        "count": 30, # ~ $21.00 at current market price
         "type": "market",
         "client_order_id": str(uuid.uuid4()) 
     }
@@ -38,7 +39,7 @@ def run_sniper():
         
         if response.status_code in [200, 201]:
             print("✅ BOOM! SUCCESS! Order confirmed by Kalshi.")
-            print(f"Order Details: {response.json()}")
+            print(f"Order ID: {response.json().get('order_id')}")
         else:
             print(f"❌ REJECTED: Status {response.status_code}")
             print(f"Message: {response.text}")
