@@ -27,3 +27,4 @@ jobs:
           XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
           MARKET_TOPIC: "NCAAM, MLB, Politics, Texas Senate, DHS Shutdown"
         run: python beast_mode_bot.py
+
