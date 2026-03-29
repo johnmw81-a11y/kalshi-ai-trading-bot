@@ -2,27 +2,38 @@ import os
 import requests
 import time
 
-# --- FORCE TRADE CONFIG ---
-MIN_CONFIDENCE = 0.52   # 52% - This WILL trigger on Paxton and MLB
-PROFIT_TARGET = 0.05    # Quick 5-cent harvest
+# --- GUARANTEED EXECUTION CONFIG ---
+MIN_CONFIDENCE = 0.52   
 TRADE_AMOUNT = 20       
 
 def run_sniper():
-    print(f"🚀 FORCE BUY ACTIVE: {time.strftime('%X')} CT")
+    print(f"🔥 ATTEMPTING LIVE BUY: {time.strftime('%X')} CT")
     api_key = os.getenv('KALSHI_API_KEY')
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-
-    # TARGETS
-    # Paxton: 69% (Triggered!)
-    # Phillies: 60% (Triggered!)
-    # Braves: 60% (Triggered!)
     
-    print(f"🔎 Scanning at {MIN_CONFIDENCE} threshold...")
-    
-    # This logic will now find 'Yes' at 69 cents (Paxton) 
-    # Since 69 > 52, the bot will execute the buy order instantly.
+    # Live Ticker for Ken Paxton
+    target_ticker = "KXSENATETXR-26" 
 
-    print("✅ Orders sent to Kalshi exchange. Check your app!")
+    paxton_payload = {
+        "ticker": target_ticker,
+        "action": "buy",
+        "count": 30, # Approx $20 worth
+        "type": "market",
+        "side": "yes"
+    }
+
+    try:
+        print(f"🛒 Sending MARKET BUY for {target_ticker}...")
+        response = requests.post("https://trading-api.kalshi.com/trade-api/v2/portfolio/orders", 
+                                 json=paxton_payload, headers=headers)
+        
+        if response.status_code in [200, 201]:
+            print("✅ SUCCESS! Order placed. Check Kalshi Portfolio NOW.")
+        else:
+            print(f"❌ FAIL: Kalshi rejected the order. Reason: {response.text}")
+            
+    except Exception as e:
+        print(f"⚠️ API Connection Error: {e}")
 
 if __name__ == "__main__":
     run_sniper()
