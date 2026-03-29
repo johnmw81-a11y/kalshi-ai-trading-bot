@@ -9,12 +9,10 @@ from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives import serialization
 
 def sign_request(private_key_str, timestamp, method, path):
-    # Load the private key from your GitHub Secret
     private_key = serialization.load_pem_private_key(
         private_key_str.encode('utf-8'), 
         password=None
     )
-    # Create the signature string Kalshi requires
     msg_string = timestamp + method + path
     signature = private_key.sign(
         msg_string.encode('utf-8'),
@@ -29,7 +27,6 @@ def sign_request(private_key_str, timestamp, method, path):
 def run_sniper():
     print(f"🎯 RSA AUTHENTICATED SNIPER: {time.strftime('%X')} CT")
     
-    # Pull the two new secrets
     api_key_id = os.getenv('KALSHI_KEY_ID')
     private_key_str = os.getenv('KALSHI_PRIVATE_KEY')
     
@@ -41,11 +38,9 @@ def run_sniper():
     target_ticker = "KXSENATETXR-26-KP" 
     path = "/portfolio/orders"
     
-    # Generate the cryptographic signature
     timestamp = str(int(datetime.datetime.now().timestamp() * 1000))
     signature = sign_request(private_key_str, timestamp, "POST", "/trade-api/v2" + path)
     
-    # The NEW mandatory headers for Kalshi
     headers = {
         "KALSHI-ACCESS-KEY": api_key_id,
         "KALSHI-ACCESS-SIGNATURE": signature,
@@ -53,12 +48,14 @@ def run_sniper():
         "Content-Type": "application/json"
     }
 
+    # THE FIX IS HERE: Added 'yes_price' to satisfy Kalshi's safety requirements
     order_payload = {
         "ticker": target_ticker,
         "action": "buy",
         "side": "yes",
         "count": 30, 
         "type": "market",
+        "yes_price": 85, # Maximum willing to pay (in cents). Fills at best available.
         "client_order_id": str(uuid.uuid4()) 
     }
 
@@ -67,7 +64,7 @@ def run_sniper():
         response = requests.post(f"{base_url}{path}", json=order_payload, headers=headers)
         
         if response.status_code in [200, 201]:
-            print("✅ BOOM! SUCCESS! Trade confirmed.")
+            print("✅ BOOM! SUCCESS! Trade confirmed. Check your App!")
             print(response.json())
         else:
             print(f"❌ REJECTED: Status {response.status_code}")
