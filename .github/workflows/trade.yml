@@ -2,9 +2,9 @@ name: Continuous Sports & Politics Sniper
 
 on:
   schedule:
-    - cron: '*/3 * * * *'  # The "Request" for 3 minutes
-  workflow_dispatch:      # The Manual Button
-  push:                   # NEW: Runs INSTANTLY when you save code
+    - cron: '*/3 * * * *'
+  workflow_dispatch:
+  push:
     branches: [main]
 
 jobs:
