@@ -1,28 +1,40 @@
-name: Continuous Sports & Politics Sniper
+import os
+import requests
+import time
 
-on:
-  schedule:
-    - cron: '*/3 * * * *'
-  workflow_dispatch:
-  push:
-    branches: [main]
+# --- GUARANTEED EXECUTION CONFIG ---
+MIN_CONFIDENCE = 0.52   
+TRADE_AMOUNT = 20       
 
-jobs:
-  trade:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-      
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
+def run_sniper():
+    print(f"🔥 ATTEMPTING LIVE BUY: {time.strftime('%X')} CT")
+    api_key = os.getenv('KALSHI_API_KEY')
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    
+    # We are trying the primary 2026 ticker for Ken Paxton
+    target_ticker = "KXSENATETXR-26" 
 
-      - name: Install Dependencies
-        run: pip install requests
+    paxton_payload = {
+        "ticker": target_ticker,
+        "action": "buy",
+        "count": 30, # Approx $20 worth
+        "type": "market",
+        "side": "yes"
+    }
 
-      - name: Execute Harvester Loop
-        env:
-          KALSHI_API_KEY: ${{ secrets.KALSHI_API_KEY }}
-        run: python beast_mode_bot.py
+    try:
+        # Step 1: Fire the order
+        print(f"🛒 Sending MARKET BUY for {target_ticker}...")
+        response = requests.post("https://trading-api.kalshi.com/trade-api/v2/portfolio/orders", 
+                                 json=paxton_payload, headers=headers)
+        
+        if response.status_code in [200, 201]:
+            print("✅ SUCCESS! Order placed. Check Kalshi Portfolio NOW.")
+        else:
+            print(f"❌ FAIL: Kalshi rejected the order. Reason: {response.text}")
+            
+    except Exception as e:
+        print(f"⚠️ API Connection Error: {e}")
+
+if __name__ == "__main__":
+    run_sniper()
