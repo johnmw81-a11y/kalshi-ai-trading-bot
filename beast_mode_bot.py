@@ -1,21 +1,47 @@
-# --- HARVESTER LOGIC ADDITION ---
-def harvest_momentum(current_price, avg_buy_price, confidence):
-    """
-    Logic to catch momentum and harvest small wins.
-    """
-    # 1. THE HARVEST (Take Profit)
-    # If we own it and are up by 7 cents, SELL immediately to lock in the win.
-    if avg_buy_price > 0:
-        profit = current_price - avg_buy_price
-        if profit >= 0.07:
-            return "SELL_HARVEST"
+import os
+import time
+import requests
 
-    # 2. THE MOMENTUM BUY
-    # If we don't own it and confidence is high (65%+) and price is rising.
-    if avg_buy_price == 0 and confidence >= 0.65:
-        return "BUY_MOMENTUM"
+# --- CONFIGURATION ---
+KALSHI_API_URL = "https://trading-api.kalshi.com/trade-api/v2"
+MIN_CONFIDENCE = 0.60  # Sniper Entry Trigger
+PROFIT_TARGET = 0.07   # Harvester Exit (7 cents profit)
+TRADE_AMOUNT = 20      # Dollars per trade
 
-    # 3. THE RE-ENTRY (Buy the Dip)
-    # If we just sold at a high, wait for a 3-cent drop to buy back in.
-    # This catches the 'zigzag' of a game.
-    return "HOLD"
+def get_kalshi_headers():
+    return {
+        "Authorization": f"Bearer {os.getenv('KALSHI_API_KEY')}",
+        "Content-Type": "application/json"
+    }
+
+def run_harvester_loop():
+    print(f"🚀 Loop started at {time.strftime('%X')} CT")
+    
+    # 1. GET CURRENT POSITIONS (To see what we can 'Harvest')
+    # This checks if you already bought something and if it's time to sell for a win.
+    portfolio = requests.get(f"{KALSHI_API_URL}/portfolio/positions", headers=get_kalshi_headers()).json()
+    
+    for pos in portfolio.get('positions', []):
+        ticker = pos['ticker']
+        avg_price = float(pos['avg_cost_basis']) / 100
+        current_market = requests.get(f"{KALSHI_API_URL}/markets/{ticker}", headers=get_kalshi_headers()).json()
+        current_price = float(current_market['market']['yes_bid']) / 100
+        
+        # HARVEST LOGIC: If we are up 7 cents, SELL ALL
+        if (current_price - avg_price) >= PROFIT_TARGET:
+            print(f"💰 HARVESTING: {ticker} up {current_price - avg_price:.2f}. Selling for profit!")
+            # [Place Sell Order Code Here]
+            continue
+
+    # 2. SNIPER LOGIC (To find new entries)
+    # This scans the markets you care about
+    topics = os.getenv("MARKET_TOPIC", "NCAAM, MLB, Politics").split(",")
+    for topic in topics:
+        print(f"🔎 Scanning {topic.strip()} for Sniper entries...")
+        # [Market Scanning & AI Confidence Logic Here]
+        # If AI Confidence > 0.60 and we don't own it: BUY $20
+
+    print("✅ Loop finished. Standing by for next 3-minute cycle.")
+
+if __name__ == "__main__":
+    run_harvester_loop()
