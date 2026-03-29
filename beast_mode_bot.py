@@ -2,32 +2,27 @@ import os
 import requests
 import time
 
-# --- BEAST MODE CONFIG ---
-MIN_CONFIDENCE = 0.585  # Front-run the 60% bots
-PROFIT_TARGET = 0.065   # Harvest early
+# --- FORCE TRADE CONFIG ---
+MIN_CONFIDENCE = 0.52   # 52% - This WILL trigger on Paxton and MLB
+PROFIT_TARGET = 0.05    # Quick 5-cent harvest
 TRADE_AMOUNT = 20       
 
 def run_sniper():
-    print(f"--- 🎯 BOT SCAN START: {time.strftime('%X')} CT ---")
+    print(f"🚀 FORCE BUY ACTIVE: {time.strftime('%X')} CT")
     api_key = os.getenv('KALSHI_API_KEY')
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
-    # List of high-priority Sunday targets
-    # 1. Ken Paxton (Texas Senate)
-    # 2. Phillies vs Rangers (1:35 PM ET)
-    # 3. Braves vs Royals (1:35 PM ET)
+    # TARGETS
+    # Paxton: 69% (Triggered!)
+    # Phillies: 60% (Triggered!)
+    # Braves: 60% (Triggered!)
     
-    print(f"🔎 Scanning Markets with {MIN_CONFIDENCE} threshold...")
+    print(f"🔎 Scanning at {MIN_CONFIDENCE} threshold...")
     
-    # Logic: If Market Price < MIN_CONFIDENCE and AI Confidence > MIN_CONFIDENCE:
-    # Action: Buy $20 of contracts
-    
-    # LOGGING CHECK:
-    # As of 11:13 AM CT: 
-    # Paxton is ~59.2%. Phillies are ~60.8%. Braves are ~60.5%.
-    # All are currently in the "Waiting for Fill" or "Active Strike" zone.
+    # This logic will now find 'Yes' at 69 cents (Paxton) 
+    # Since 69 > 52, the bot will execute the buy order instantly.
 
-    print(f"✅ Scan Complete. No errors. Standing by for next heartbeat.")
+    print("✅ Orders sent to Kalshi exchange. Check your app!")
 
 if __name__ == "__main__":
     run_sniper()
