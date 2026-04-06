@@ -40,7 +40,7 @@ def run_mlb_auto_hunter():
         print("❌ Missing Secrets!")
         return
 
-    # 1. 📡 AUTOPILOT RADAR: FETCH ALL LIVE MLB GAMES
+    # 1. 📡 AUTOPILOT RADAR
     print("📡 Scanning Kalshi radar for active MLB games...")
     markets_resp = make_kalshi_request("GET", "/markets?series_ticker=KXMLBGAME&status=open&limit=100")
     
@@ -57,18 +57,30 @@ def run_mlb_auto_hunter():
         print("💤 No active MLB games found right now. Going back to sleep.")
         return
 
-    # 2. 💼 GRAB PORTFOLIO
+    # 2. 💼 GRAB PORTFOLIO & TRACK INVESTED GAMES
     print("💼 Fetching your master Kalshi portfolio...")
     pos_resp = make_kalshi_request("GET", "/portfolio/positions")
     all_positions = []
+    invested_base_games = set() # NEW: Memory bank for games we already bet on
+    
     if pos_resp and pos_resp.status_code == 200:
         all_positions = pos_resp.json().get('market_positions', [])
+        for p in all_positions:
+            pos_ticker = p.get('ticker', '')
+            pos_count = int(float(p.get('position_fp', '0')))
+            if pos_count > 0:
+                # Chops off the final team abbreviation to get the base game ID
+                base_game = pos_ticker.rsplit('-', 1)[0]
+                invested_base_games.add(base_game)
 
-    # 3. 🔄 LOOP THROUGH EVERY GAME ON THE RADAR
+    # 3. 🔄 LOOP THROUGH EVERY GAME
     for ticker in active_tickers:
         print(f"\n----------------------------------------")
         print(f"🎯 ANALYZING: {ticker}")
         
+        # Identify the base game for the current ticker we are looking at
+        current_base_game = ticker.rsplit('-', 1)[0]
+
         market_resp = make_kalshi_request("GET", f"/markets/{ticker}")
         if market_resp.status_code != 200:
             continue 
@@ -108,8 +120,13 @@ def run_mlb_auto_hunter():
                 else: print(f"❌ Sell failed: {sell_resp.text}")
                 continue 
 
+        # 🛑 NEW RULE: If we don't own THIS team, but we already own the OTHER team, skip!
+        if current_contracts == 0 and current_base_game in invested_base_games:
+            print(f"🛑 Skipping: We already have money on the other side of this game.")
+            continue
+
         if current_value_dollars >= MAX_POSITION_DOLLARS:
-            print(f"🛡️ Max limit reached for this game. Holding steady.")
+            print(f"🛡️ Max limit reached for this team. Holding steady.")
             continue
             
         if yes_ask <= BUY_PRICE_LIMIT:
@@ -121,8 +138,12 @@ def run_mlb_auto_hunter():
                 print(f"🛒 Price is good ({yes_ask}¢). Buying {contracts_to_buy} contracts...")
                 buy_payload = {"ticker": ticker, "action": "buy", "side": "yes", "count": contracts_to_buy, "type": "market", "yes_price": BUY_PRICE_LIMIT, "client_order_id": str(uuid.uuid4())}
                 buy_resp = make_kalshi_request("POST", "/portfolio/orders", buy_payload)
-                if buy_resp.status_code in [200, 201]: print("✅ BOOM! BOUGHT MORE.")
-                else: print(f"❌ Buy failed: {buy_resp.text}")
+                if buy_resp.status_code in [200, 201]: 
+                    print("✅ BOOM! BOUGHT MORE.")
+                    # Mark this game as invested immediately so we don't buy the other team later in the loop!
+                    invested_base_games.add(current_base_game) 
+                else: 
+                    print(f"❌ Buy failed: {buy_resp.text}")
         else:
             print(f"⏳ Market too expensive ({yes_ask}¢). Waiting for a dip.")
             
