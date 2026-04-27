@@ -25,6 +25,7 @@ jobs:
           path: |
             .odds_cache.json
             .entry_prices.json
+            .trade_log.csv
           key: mlb-state-restore
           restore-keys: |
             mlb-state-
@@ -38,6 +39,7 @@ jobs:
           KALSHI_PRIVATE_KEY: ${{ secrets.KALSHI_PRIVATE_KEY }}
           ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
           XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python mlb_sniper.py
 
       - name: Save state files
@@ -47,4 +49,5 @@ jobs:
           path: |
             .odds_cache.json
             .entry_prices.json
+            .trade_log.csv
           key: mlb-state-${{ github.run_id }}-${{ github.run_attempt }}
