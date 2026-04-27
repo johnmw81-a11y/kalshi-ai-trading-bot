@@ -2,7 +2,7 @@ name: MLB Live Game Sniper
 
 on:
   schedule:
-    - cron: '*/6 * * * *'
+    - cron: '*/30 * * * *'
   workflow_dispatch:
   push:
     branches: [main]
