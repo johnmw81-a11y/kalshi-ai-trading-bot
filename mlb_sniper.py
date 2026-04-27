@@ -42,6 +42,20 @@ MAX_BUY_PRICE = 80
 # --- AI CONFIDENCE GATE ---
 USE_AI_GATE = True
 MIN_AI_CONFIDENCE = 0.6
+# Ensemble weights — Grok and Gemini debate every trade. If only one key is
+# available, that model's confidence is used directly. Tweak weights if you
+# trust one model over the other.
+GROK_WEIGHT = 0.6
+GEMINI_WEIGHT = 0.4
+
+# --- MARKET DEPTH CHECK (NEW in v4) ---
+USE_DEPTH_CHECK = True
+MAX_BID_ASK_SPREAD_CENTS = 5    # skip if spread on chosen side > this
+MIN_TOP_OF_BOOK_SIZE = 10       # skip if best bid/ask has fewer contracts than this
+
+# --- TRADE LOGGING (NEW in v4) ---
+USE_TRADE_LOGGING = True
+TRADE_LOG_PATH_RELATIVE = '.trade_log.csv'
 
 # --- ODDS API ---
 ODDS_API_BASE = "https://api.the-odds-api.com/v4"
@@ -52,6 +66,7 @@ ODDS_API_REGION = "us"
 CACHE_DIR = os.path.dirname(os.path.abspath(__file__)) if '__file__' in globals() else '.'
 ODDS_CACHE_PATH = os.path.join(CACHE_DIR, '.odds_cache.json')
 ENTRY_PRICES_PATH = os.path.join(CACHE_DIR, '.entry_prices.json')
+TRADE_LOG_PATH = os.path.join(CACHE_DIR, TRADE_LOG_PATH_RELATIVE)
 ODDS_CACHE_TTL_SECONDS = 30 * 60
 
 _odds_cache = None
@@ -488,17 +503,98 @@ def clear_entry_price(ticker, side):
 
 
 # =============================================================================
-# AI CONFIDENCE GATE
+# MARKET DEPTH CHECK (NEW in v4)
 # =============================================================================
 
-def ai_confidence_check(ticker, side, kalshi_price_cents, fair_prob_pct, edge_cents):
-    if not USE_AI_GATE:
-        return 1.0
-    api_key = os.getenv('XAI_API_KEY')
-    if not api_key:
-        return 1.0
+def check_market_depth(ticker, side, ask_cents, bid_cents):
+    """Skip thin / wide-spread markets where slippage and noise dominate edge.
+    Returns (ok, reason)."""
+    if not USE_DEPTH_CHECK:
+        return True, ""
+    spread = ask_cents - bid_cents
+    if spread > MAX_BID_ASK_SPREAD_CENTS:
+        return False, f"spread {spread}¢ > {MAX_BID_ASK_SPREAD_CENTS}¢"
 
-    prompt = f"""You are evaluating an MLB prediction-market bet on Kalshi.
+    # Check top-of-book size via the orderbook endpoint
+    try:
+        resp = make_kalshi_request("GET", f"/markets/{ticker}/orderbook")
+        if resp is None or resp.status_code != 200:
+            return True, ""
+        book = resp.json().get('orderbook', {})
+        levels = book.get('yes', []) if side == "yes" else book.get('no', [])
+        if not levels:
+            return False, "empty orderbook on this side"
+        for price, size in levels:
+            if int(price) == int(ask_cents):
+                if size < MIN_TOP_OF_BOOK_SIZE:
+                    return False, f"only {size} contracts at {ask_cents}¢"
+                return True, ""
+        return True, ""
+    except Exception as e:
+        print(f"   ⚠️ Depth check error: {e} — auto-passing")
+        return True, ""
+
+
+# =============================================================================
+# TRADE LOGGING (NEW in v4)
+# =============================================================================
+
+TRADE_LOG_HEADER = (
+    "timestamp,ticker,team,event,side,kalshi_ask,kalshi_bid,fair_yes_cents,"
+    "edge_cents,ai_confidence,contracts,price,bankroll,reason\n"
+)
+
+
+def _ensure_trade_log_exists():
+    if not os.path.exists(TRADE_LOG_PATH):
+        try:
+            with open(TRADE_LOG_PATH, 'w') as f:
+                f.write(TRADE_LOG_HEADER)
+        except OSError as e:
+            print(f"   ⚠️ Could not init trade log: {e}")
+
+
+def log_trade_decision(**kwargs):
+    """Append a row to the trade log CSV. Fields are optional — empty string for missing.
+    Events: ENTRY, SKIP, HARVEST, STOP_FLOOR, STOP_DYNAMIC, ENTRY_FAIL."""
+    if not USE_TRADE_LOGGING:
+        return
+    _ensure_trade_log_exists()
+    fields = ['ticker', 'team', 'event', 'side', 'kalshi_ask', 'kalshi_bid',
+              'fair_yes_cents', 'edge_cents', 'ai_confidence', 'contracts',
+              'price', 'bankroll', 'reason']
+    row = [datetime.datetime.now(datetime.timezone.utc).isoformat()]
+    for f in fields:
+        v = kwargs.get(f, '')
+        s = str(v).replace(',', ';').replace('\n', ' ').replace('"', "'")
+        row.append(s)
+    try:
+        with open(TRADE_LOG_PATH, 'a') as fh:
+            fh.write(','.join(row) + '\n')
+    except OSError as e:
+        print(f"   ⚠️ Could not write to trade log: {e}")
+
+
+# =============================================================================
+# AI CONFIDENCE GATE — ENSEMBLE (Grok + Gemini)
+# =============================================================================
+
+def _strip_fences(text):
+    """Strip markdown code fences from LLM JSON output."""
+    text = text.strip()
+    fence = chr(96) * 3
+    if text.startswith(fence):
+        text = text[3:]
+        if text.lower().startswith('json'):
+            text = text[4:]
+        if text.endswith(fence):
+            text = text[:-3]
+        text = text.strip()
+    return text
+
+
+def _build_ai_prompt(ticker, side, kalshi_price_cents, fair_prob_pct, edge_cents):
+    return f"""You are evaluating an MLB prediction-market bet on Kalshi.
 
 TICKER: {ticker}
 SIDE: {side.upper()}
@@ -511,6 +607,12 @@ Use general baseball knowledge: starting pitcher matchup, team form, weather/pos
 Return ONLY a JSON object with keys "confidence" (0.0 to 1.0) and "reason" (one sentence).
 No other text, no markdown fences."""
 
+
+def _grok_confidence(prompt):
+    """Returns (confidence, reason) from Grok. Returns (None, '') on any failure."""
+    api_key = os.getenv('XAI_API_KEY')
+    if not api_key:
+        return None, ''
     try:
         resp = requests.post(
             "https://api.x.ai/v1/chat/completions",
@@ -520,24 +622,74 @@ No other text, no markdown fences."""
             timeout=15,
         )
         if resp.status_code != 200:
-            return 1.0
-        text = resp.json()['choices'][0]['message']['content'].strip()
-        fence = chr(96) * 3
-        if text.startswith(fence):
-            text = text[3:]
-            if text.lower().startswith('json'):
-                text = text[4:]
-            if text.endswith(fence):
-                text = text[:-3]
-            text = text.strip()
+            return None, ''
+        text = _strip_fences(resp.json()['choices'][0]['message']['content'])
         data = json.loads(text)
-        conf = float(data.get('confidence', 0.5))
-        reason = data.get('reason', '')
-        print(f"   🤖 AI confidence: {conf:.2f} — {reason}")
-        return conf
+        return float(data.get('confidence', 0.5)), data.get('reason', '')
     except Exception as e:
-        print(f"   ⚠️ AI gate error: {e} — auto-passing")
+        print(f"   ⚠️ Grok error: {e}")
+        return None, ''
+
+
+def _gemini_confidence(prompt):
+    """Returns (confidence, reason) from Gemini. Returns (None, '') on any failure."""
+    api_key = os.getenv('GEMINI_API_KEY')
+    if not api_key:
+        return None, ''
+    try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+        body = {
+            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+            "generationConfig": {"temperature": 0, "maxOutputTokens": 200, "responseMimeType": "application/json"},
+        }
+        resp = requests.post(url, json=body, timeout=15)
+        if resp.status_code != 200:
+            return None, ''
+        candidates = resp.json().get('candidates', [])
+        if not candidates:
+            return None, ''
+        text = _strip_fences(candidates[0].get('content', {}).get('parts', [{}])[0].get('text', ''))
+        data = json.loads(text)
+        return float(data.get('confidence', 0.5)), data.get('reason', '')
+    except Exception as e:
+        print(f"   ⚠️ Gemini error: {e}")
+        return None, ''
+
+
+def ai_confidence_check(ticker, side, kalshi_price_cents, fair_prob_pct, edge_cents):
+    """Ensemble of Grok + Gemini. Returns weighted confidence 0-1.
+    Returns 1.0 (auto-pass) if AI is disabled or both models fail."""
+    ai_confidence_check.last_reason = ""
+    if not USE_AI_GATE:
         return 1.0
+    prompt = _build_ai_prompt(ticker, side, kalshi_price_cents, fair_prob_pct, edge_cents)
+
+    grok_conf, grok_reason = _grok_confidence(prompt)
+    gemini_conf, gemini_reason = _gemini_confidence(prompt)
+
+    confidences = []
+    weights = []
+    reasons = []
+    if grok_conf is not None:
+        confidences.append(grok_conf)
+        weights.append(GROK_WEIGHT)
+        reasons.append(f"Grok {grok_conf:.2f}: {grok_reason}")
+    if gemini_conf is not None:
+        confidences.append(gemini_conf)
+        weights.append(GEMINI_WEIGHT)
+        reasons.append(f"Gemini {gemini_conf:.2f}: {gemini_reason}")
+
+    if not confidences:
+        print("   ⚠️ Both AI models failed — auto-passing.")
+        return 1.0
+
+    total_w = sum(weights)
+    weighted = sum(c * w for c, w in zip(confidences, weights)) / total_w
+    print(f"   🤖 Ensemble confidence: {weighted:.2f} ({len(confidences)} model(s))")
+    for r in reasons:
+        print(f"      • {r}")
+    ai_confidence_check.last_reason = " | ".join(reasons)
+    return weighted
 
 
 # =============================================================================
@@ -553,6 +705,8 @@ def run_mlb_auto_hunter():
     odds_data = fetch_mlb_odds()
     trade_amount_dollars, max_position_dollars = compute_position_sizing()
     print(f"💵 Position sizing: ${trade_amount_dollars:.2f}/trade, ${max_position_dollars:.2f}/team cap")
+    _bal = get_kalshi_balance_cents()
+    balance_for_log = f"{_bal/100:.2f}" if _bal is not None else ""
 
     print("📡 Scanning Kalshi for active MLB games...")
     markets_resp = make_kalshi_request("GET", "/markets?series_ticker=KXMLBGAME&status=open&limit=100")
@@ -638,16 +792,20 @@ def run_mlb_auto_hunter():
             entry = get_entry_price(ticker, 'yes')
             print(f"💰 Hold {current_yes_contracts} YES @ entry {entry or '?'}¢, bid {yes_bid}¢")
             should_sell = False
+            event = ""
             reason = ""
             if yes_bid >= HARVEST_PRICE:
-                should_sell, reason = True, f"HARVEST at {yes_bid}¢"
+                should_sell, event, reason = True, "HARVEST", f"HARVEST at {yes_bid}¢"
             elif 0 < yes_bid <= STOP_LOSS_FLOOR:
-                should_sell, reason = True, f"STOP-LOSS FLOOR at {yes_bid}¢"
+                should_sell, event, reason = True, "STOP_FLOOR", f"STOP-LOSS FLOOR at {yes_bid}¢"
             elif entry is not None and yes_bid > 0 and (entry - yes_bid) >= STOP_LOSS_DROP_CENTS:
-                should_sell, reason = True, f"DYNAMIC STOP: bid dropped {entry - yes_bid}¢ from {entry}¢ entry"
+                should_sell, event, reason = True, "STOP_DYNAMIC", f"DYNAMIC STOP: bid dropped {entry - yes_bid}¢ from {entry}¢ entry"
             if should_sell:
                 print(f"   🚨 {reason}")
                 ok = _place_limit(ticker, "sell", "yes", current_yes_contracts, yes_bid)
+                log_trade_decision(ticker=ticker, team=team_abbrev, event=event,
+                                   side="yes", kalshi_bid=yes_bid, contracts=current_yes_contracts,
+                                   price=yes_bid, bankroll=balance_for_log, reason=reason)
                 if ok:
                     clear_entry_price(ticker, 'yes')
                 continue
@@ -656,16 +814,20 @@ def run_mlb_auto_hunter():
             entry = get_entry_price(ticker, 'no')
             print(f"💰 Hold {current_no_contracts} NO @ entry {entry or '?'}¢, bid {no_bid}¢")
             should_sell = False
+            event = ""
             reason = ""
             if no_bid >= HARVEST_PRICE:
-                should_sell, reason = True, f"HARVEST at {no_bid}¢"
+                should_sell, event, reason = True, "HARVEST", f"HARVEST at {no_bid}¢"
             elif 0 < no_bid <= STOP_LOSS_FLOOR:
-                should_sell, reason = True, f"STOP-LOSS FLOOR at {no_bid}¢"
+                should_sell, event, reason = True, "STOP_FLOOR", f"STOP-LOSS FLOOR at {no_bid}¢"
             elif entry is not None and no_bid > 0 and (entry - no_bid) >= STOP_LOSS_DROP_CENTS:
-                should_sell, reason = True, f"DYNAMIC STOP: bid dropped {entry - no_bid}¢ from {entry}¢ entry"
+                should_sell, event, reason = True, "STOP_DYNAMIC", f"DYNAMIC STOP: bid dropped {entry - no_bid}¢ from {entry}¢ entry"
             if should_sell:
                 print(f"   🚨 {reason}")
                 ok = _place_limit(ticker, "sell", "no", current_no_contracts, no_bid)
+                log_trade_decision(ticker=ticker, team=team_abbrev, event=event,
+                                   side="no", kalshi_bid=no_bid, contracts=current_no_contracts,
+                                   price=no_bid, bankroll=balance_for_log, reason=reason)
                 if ok:
                     clear_entry_price(ticker, 'no')
                 continue
@@ -710,6 +872,17 @@ def run_mlb_auto_hunter():
             continue
         print(f"💡 Edge found: {chosen_side.upper()} at {chosen_price}¢ with +{chosen_edge}¢ edge")
 
+        depth_ok, depth_reason = check_market_depth(ticker, chosen_side, chosen_price,
+                                                    yes_bid if chosen_side == "yes" else no_bid)
+        if not depth_ok:
+            print(f"⏸️ Depth check failed: {depth_reason}")
+            log_trade_decision(ticker=ticker, team=team_abbrev, event="SKIP",
+                               side=chosen_side, kalshi_ask=chosen_price,
+                               kalshi_bid=yes_bid if chosen_side == "yes" else no_bid,
+                               fair_yes_cents=fair_yes_cents, edge_cents=chosen_edge,
+                               bankroll=balance_for_log, reason=f"depth: {depth_reason}")
+            continue
+
         confidence = ai_confidence_check(
             ticker, chosen_side, chosen_price,
             fair_yes_cents if chosen_side == "yes" else fair_no_cents,
@@ -717,6 +890,12 @@ def run_mlb_auto_hunter():
         )
         if confidence < MIN_AI_CONFIDENCE:
             print(f"   ⛔ AI confidence {confidence:.2f} < {MIN_AI_CONFIDENCE} — skipping.")
+            log_trade_decision(ticker=ticker, team=team_abbrev, event="SKIP",
+                               side=chosen_side, kalshi_ask=chosen_price,
+                               kalshi_bid=yes_bid if chosen_side == "yes" else no_bid,
+                               fair_yes_cents=fair_yes_cents, edge_cents=chosen_edge,
+                               ai_confidence=confidence, bankroll=balance_for_log,
+                               reason=f"AI<{MIN_AI_CONFIDENCE}: {ai_confidence_check.last_reason}")
             continue
 
         existing_dollars = (current_yes_contracts * yes_bid + current_no_contracts * no_bid) / 100
@@ -734,6 +913,21 @@ def run_mlb_auto_hunter():
         if success:
             invested_base_games.add(current_base_game)
             save_entry_price(ticker, chosen_side, chosen_price)
+            log_trade_decision(ticker=ticker, team=team_abbrev, event="ENTRY",
+                               side=chosen_side, kalshi_ask=chosen_price,
+                               kalshi_bid=yes_bid if chosen_side == "yes" else no_bid,
+                               fair_yes_cents=fair_yes_cents, edge_cents=chosen_edge,
+                               ai_confidence=confidence, contracts=contracts_to_buy,
+                               price=chosen_price, bankroll=balance_for_log,
+                               reason="all gates passed")
+        else:
+            log_trade_decision(ticker=ticker, team=team_abbrev, event="ENTRY_FAIL",
+                               side=chosen_side, kalshi_ask=chosen_price,
+                               kalshi_bid=yes_bid if chosen_side == "yes" else no_bid,
+                               fair_yes_cents=fair_yes_cents, edge_cents=chosen_edge,
+                               ai_confidence=confidence, contracts=contracts_to_buy,
+                               price=chosen_price, bankroll=balance_for_log,
+                               reason="Kalshi order rejected")
 
         time.sleep(1)
 
