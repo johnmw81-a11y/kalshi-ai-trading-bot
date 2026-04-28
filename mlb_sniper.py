@@ -32,7 +32,7 @@ STOP_LOSS_DROP_CENTS = 25       # NEW: also exit if bid drops this many cents fr
 # --- DAY-OF FILTERS ---
 CLOSE_WITHIN_HOURS = 9999
 MIN_MINUTES_TO_CLOSE = 30
-MIN_VOLUME_24H = 500
+MIN_VOLUME_24H = 0
 
 # --- EDGE FILTERS ---
 MIN_EDGE_CENTS = 4
