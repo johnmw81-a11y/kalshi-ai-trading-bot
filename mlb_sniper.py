@@ -30,7 +30,7 @@ STOP_LOSS_FLOOR = 35            # absolute floor: always exit if bid drops below
 STOP_LOSS_DROP_CENTS = 25       # NEW: also exit if bid drops this many cents from entry
 
 # --- DAY-OF FILTERS ---
-CLOSE_WITHIN_HOURS = 36
+CLOSE_WITHIN_HOURS = 9999
 MIN_MINUTES_TO_CLOSE = 30
 MIN_VOLUME_24H = 500
 
